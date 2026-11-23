@@ -1,10 +1,14 @@
-from django.db import models
-from django.contrib.auth.models import User
+"""
+Modelos de dominio del módulo clinic para el sistema de gestión veterinaria PetCare.
+"""
 
-"""
-Modelo representativo de los tutores o dueños de las mascotas para operaciones CRUD
-"""
+from django.contrib.auth.models import User
+from django.db import models
+
+
 class Tutor(models.Model):
+    """Modelo representativo de los tutores o dueños de las mascotas."""
+
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
     telefono = models.CharField(max_length=20)
@@ -12,12 +16,12 @@ class Tutor(models.Model):
     direccion = models.TextField(blank=True, null=True)
 
     def __str__(self):
-        return f"{self.nombre} {self.apellido}"
+        return f'{self.nombre} {self.apellido}'
 
-"""
-Modelo representativo de las mascotas pacientes de la clínica
-"""
+
 class Mascota(models.Model):
+    """Modelo representativo de las mascotas pacientes de la clínica."""
+
     ESPECIE_CHOICES = [
         ('Canino', 'Canino'),
         ('Felino', 'Felino'),
@@ -30,23 +34,23 @@ class Mascota(models.Model):
     fecha_nacimiento = models.DateField(blank=True, null=True)
 
     def __str__(self):
-        return f"{self.nombre} ({self.especie}) - Tutor: {self.tutor.apellido}"
+        return f'{self.nombre} ({self.especie}) - Tutor: {self.tutor.apellido}'
 
-"""
-Modelo para gestionar la disponibilidad y agendamiento por profesional veterinario
-"""
+
 class Veterinario(models.Model):
+    """Modelo para gestionar la disponibilidad y agendamiento por profesional veterinario."""
+
     usuario = models.OneToOneField(User, on_delete=models.CASCADE)
     especialidad = models.CharField(max_length=100)
     telefono = models.CharField(max_length=20)
 
     def __str__(self):
-        return f"Dr/Dra. {self.usuario.last_name} - {self.especialidad}"
+        return f'Dr/Dra. {self.usuario.last_name} - {self.especialidad}'
 
-"""
-Modelo para el agendamiento de citas médicas y prevención de solapamientos
-"""
+
 class Cita(models.Model):
+    """Modelo para el agendamiento de citas médicas y prevención de solapamientos."""
+
     ESTADO_CHOICES = [
         ('Pendiente', 'Pendiente'),
         ('Realizada', 'Realizada'),
@@ -59,26 +63,30 @@ class Cita(models.Model):
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='Pendiente')
 
     def __str__(self):
-        return f"Cita: {self.mascota.nombre} con {self.veterinario} - {self.fecha_hora}"
+        return f'Cita: {self.mascota.nombre} con {self.veterinario} - {self.fecha_hora}'
 
-"""
-Modelo de la Ficha Clínica Digital integrando diagnósticos, tratamientos, recetas y exámenes
-"""
+
 class FichaClinica(models.Model):
+    """
+    Modelo de la Ficha Clínica Digital integrando diagnósticos, tratamientos,
+    recetas, exámenes y documento adjunto opcional respaldado en S3.
+    """
+
     cita = models.OneToOneField(Cita, on_delete=models.CASCADE, related_name='ficha')
     diagnostico = models.TextField()
     tratamiento = models.TextField()
     receta = models.TextField(blank=True, null=True)
     examenes = models.TextField(blank=True, null=True)
+    documento_adjunto = models.FileField(upload_to='fichas/', blank=True, null=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Ficha de {self.cita.mascota.nombre} - {self.fecha_creacion.date()}"
+        return f'Ficha de {self.cita.mascota.nombre} - {self.fecha_creacion.date()}'
 
-"""
-Módulo de recordatorios automatizados para vacunación y controles periódicos
-"""
+
 class Recordatorio(models.Model):
+    """Módulo de recordatorios automatizados para vacunación y controles periódicos."""
+
     TIPO_CHOICES = [
         ('Vacuna', 'Vacunación'),
         ('Control', 'Control Periódico'),
@@ -90,4 +98,4 @@ class Recordatorio(models.Model):
     completado = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.tipo} para {self.mascota.nombre} - {self.fecha_programada}"
+        return f'{self.tipo} para {self.mascota.nombre} - {self.fecha_programada}'

@@ -1,49 +1,97 @@
-from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
-from rest_framework import viewsets
-from .models import Tutor, Mascota, Veterinario, Cita, FichaClinica, Recordatorio
-from .serializers import (TutorSerializer, MascotaSerializer, VeterinarioSerializer,
-                          CitaSerializer, FichaClinicaSerializer, RecordatorioSerializer)
+"""
+Vistas y ViewSets de la API REST pura para el módulo clinic de PetCare.
+"""
 
-"""
-ViewSets para la gestión CRUD completa de las entidades del sistema PetCare
-"""
+from rest_framework import viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import Cita, FichaClinica, Mascota, Recordatorio, Tutor, Veterinario
+from .serializers import (
+    CitaSerializer,
+    FichaClinicaSerializer,
+    MascotaSerializer,
+    RecordatorioSerializer,
+    TutorSerializer,
+    VeterinarioSerializer,
+)
+
+
+class HealthCheckView(APIView):
+    """Endpoint público de salud para monitoreo y pruebas de throttling en API Gateway."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Retorna el estado operativo del servicio backend."""
+        return Response({'status': 'ok', 'service': 'petcare-backend'})
+
+
+class CurrentUserView(APIView):
+    """Endpoint autenticado que retorna el perfil del usuario asociado al token JWT."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Retorna metadatos básicos del usuario autenticado."""
+        user = request.user
+        full_name = f'{user.first_name} {user.last_name}'.strip()
+        return Response({
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'full_name': full_name or user.username,
+            'is_staff': user.is_staff,
+        })
+
+
 class TutorViewSet(viewsets.ModelViewSet):
-    queryset = Tutor.objects.all()
+    """ViewSet CRUD autenticado para la entidad Tutor."""
+
+    queryset = Tutor.objects.all().order_by('id')
     serializer_class = TutorSerializer
+    permission_classes = [IsAuthenticated]
+
 
 class MascotaViewSet(viewsets.ModelViewSet):
-    queryset = Mascota.objects.all()
+    """ViewSet CRUD autenticado para la entidad Mascota."""
+
+    queryset = Mascota.objects.select_related('tutor').all().order_by('id')
     serializer_class = MascotaSerializer
+    permission_classes = [IsAuthenticated]
+
 
 class VeterinarioViewSet(viewsets.ModelViewSet):
-    queryset = Veterinario.objects.all()
+    """ViewSet CRUD autenticado para la entidad Veterinario."""
+
+    queryset = Veterinario.objects.select_related('usuario').all().order_by('id')
     serializer_class = VeterinarioSerializer
+    permission_classes = [IsAuthenticated]
+
 
 class CitaViewSet(viewsets.ModelViewSet):
-    queryset = Cita.objects.all()
+    """ViewSet CRUD autenticado para la entidad Cita."""
+
+    queryset = Cita.objects.select_related('mascota', 'veterinario').all().order_by('fecha_hora')
     serializer_class = CitaSerializer
+    permission_classes = [IsAuthenticated]
+
 
 class FichaClinicaViewSet(viewsets.ModelViewSet):
-    queryset = FichaClinica.objects.all()
+    """ViewSet CRUD autenticado para FichaClinica con soporte multiparte para adjuntos."""
+
+    queryset = FichaClinica.objects.select_related('cita').all().order_by('-fecha_creacion')
     serializer_class = FichaClinicaSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
 
 class RecordatorioViewSet(viewsets.ModelViewSet):
-    queryset = Recordatorio.objects.all()
-    serializer_class = RecordatorioSerializer
+    """ViewSet CRUD autenticado para la entidad Recordatorio."""
 
-"""
-Vista principal del Panel Médico.
-Requiere autenticación de usuario para garantizar la seguridad del sistema.
-Recupera y expone las citas pendientes y los recordatorios activos del caso PetCare.
-"""
-@login_required(login_url='/admin/login/')
-def panel_medico(request):
-    citas = Cita.objects.all().order_by('fecha_hora')
-    recordatorios = Recordatorio.objects.filter(completado=False).order_by('fecha_programada')
-    
-    context = {
-        'citas': citas,
-        'recordatorios': recordatorios
-    }
-    return render(request, 'panel.html', context)
+    queryset = Recordatorio.objects.select_related('mascota').all().order_by('fecha_programada')
+    serializer_class = RecordatorioSerializer
+    permission_classes = [IsAuthenticated]
