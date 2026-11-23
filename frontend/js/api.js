@@ -50,7 +50,10 @@ export function hasSession() {
 
 /* Construye la URL absoluta sin duplicar barras respecto de API_BASE_URL. */
 export function buildApiUrl(path) {
-    const base = APP_CONFIG.API_BASE_URL.replace(/\/+$/, '');
+    let base = APP_CONFIG.API_BASE_URL;
+    while (base.endsWith('/')) {
+        base = base.slice(0, -1);
+    }
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `${base}${normalizedPath}`;
 }

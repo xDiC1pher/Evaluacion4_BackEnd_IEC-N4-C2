@@ -1065,8 +1065,17 @@ async function init() {
     showLoginView();
 }
 
+function startApp() {
+    init().catch((error) => {
+        showGlobalAlert(
+            `Error al inicializar la aplicación: ${error.message || 'Falla inesperada.'}`,
+            'error'
+        );
+    });
+}
+
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', startApp);
 } else {
-    init();
+    startApp();
 }
