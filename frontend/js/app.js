@@ -27,6 +27,9 @@ const state = {
     citas: [],
     fichas: [],
     recordatorios: [],
+    usuarios: [],
+    usuariosDisponibles: [],
+    editingVeterinarioUsuarioId: null,
     pendingConfirmAction: null,
 };
 
@@ -57,6 +60,7 @@ const el = {
 
     appSection: document.getElementById('appSection'),
     btnRefreshAll: document.getElementById('btnRefreshAll'),
+    tabBtnUsuarios: document.getElementById('tabBtn-usuarios'),
     tabButtons: Array.from(document.querySelectorAll('.tab-btn')),
     tabPanels: Array.from(document.querySelectorAll('.tab-panel')),
 
@@ -258,6 +262,55 @@ function populateSelect(selectEl, items, placeholder, labelFn) {
     }
 }
 
+function formatUsuarioOptionLabel(usuario) {
+    const fullName = `${usuario.first_name || ''} ${usuario.last_name || ''}`.trim();
+    const identity = fullName ? `${usuario.username} — ${fullName}` : usuario.username;
+    return usuario.email ? `${identity} (${usuario.email})` : identity;
+}
+
+function renderVeterinarioUsuarioSelect(selectedUserId = null) {
+    const selectEl = document.getElementById('veterinario-usuario');
+    const previousValue = selectedUserId !== null ? String(selectedUserId) : selectEl.value;
+    clearChildren(selectEl);
+
+    if (state.usuariosDisponibles.length === 0) {
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.disabled = true;
+        emptyOpt.selected = true;
+        emptyOpt.textContent = state.user && state.user.is_staff
+            ? 'Sin usuarios libres — cree uno en la pestaña Usuarios'
+            : 'No hay usuarios disponibles sin perfil de veterinario';
+        selectEl.appendChild(emptyOpt);
+        return;
+    }
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Seleccione un usuario...';
+    selectEl.appendChild(defaultOpt);
+
+    state.usuariosDisponibles.forEach((usuario) => {
+        const opt = document.createElement('option');
+        opt.value = String(usuario.id);
+        opt.textContent = formatUsuarioOptionLabel(usuario);
+        selectEl.appendChild(opt);
+    });
+
+    if (previousValue && state.usuariosDisponibles.some((u) => String(u.id) === previousValue)) {
+        selectEl.value = previousValue;
+    }
+}
+
+async function loadUsuariosDisponibles(incluirUsuarioId = null, selectedUserId = null) {
+    const query = incluirUsuarioId !== null
+        ? `?incluir_usuario=${encodeURIComponent(String(incluirUsuarioId))}`
+        : '';
+    const response = await apiRequest(`/api/veterinarios/usuarios-disponibles/${query}`);
+    state.usuariosDisponibles = Array.isArray(response.data) ? response.data : [];
+    renderVeterinarioUsuarioSelect(selectedUserId);
+}
+
 function refreshAllSelects() {
     populateSelect(
         document.getElementById('mascota-tutor'),
@@ -289,10 +342,14 @@ function refreshAllSelects() {
         'Seleccione una mascota...',
         (m) => `${m.nombre} (${m.especie})`
     );
+    renderVeterinarioUsuarioSelect(state.editingVeterinarioUsuarioId);
 }
 
 /* Control de navegación por pestañas */
 function activateTab(tabName) {
+    if (tabName === 'usuarios' && !(state.user && state.user.is_staff)) {
+        return;
+    }
     state.activeTab = tabName;
     el.tabButtons.forEach((btn) => {
         const isCurrent = btn.dataset.tab === tabName;
@@ -308,7 +365,14 @@ function activateTab(tabName) {
 /* Control de sesión de usuario */
 function showLoginView(reasonMessage = '') {
     state.user = null;
+    state.usuarios = [];
+    state.usuariosDisponibles = [];
+    state.editingVeterinarioUsuarioId = null;
     closeConfirmModal();
+    setVisible(el.tabBtnUsuarios, false);
+    if (state.activeTab === 'usuarios') {
+        activateTab('tutores');
+    }
     setVisible(el.loginSection, true);
     setVisible(el.appSection, false);
     setVisible(el.userStatusBox, false);
@@ -320,9 +384,14 @@ function showLoginView(reasonMessage = '') {
 
 function showAppView(user) {
     state.user = user;
+    const isStaff = Boolean(user.is_staff);
     el.userNameDisplay.textContent = user.full_name || user.username;
-    el.userRoleBadge.textContent = user.is_staff ? 'Staff Clínico' : 'Usuario';
-    el.userRoleBadge.className = user.is_staff ? 'badge badge-success' : 'badge badge-info';
+    el.userRoleBadge.textContent = isStaff ? 'Staff Clínico' : 'Usuario';
+    el.userRoleBadge.className = isStaff ? 'badge badge-success' : 'badge badge-info';
+    setVisible(el.tabBtnUsuarios, isStaff);
+    if (!isStaff && state.activeTab === 'usuarios') {
+        activateTab('tutores');
+    }
     setVisible(el.userStatusBox, true);
     setVisible(el.loginSection, false);
     setVisible(el.appSection, true);
@@ -330,14 +399,34 @@ function showAppView(user) {
 
 async function loadAllModules() {
     try {
-        const [tutoresRes, mascotasRes, vetsRes, citasRes, fichasRes, recRes] = await Promise.all([
+        const isStaff = Boolean(state.user && state.user.is_staff);
+        const disponiblesQuery = state.editingVeterinarioUsuarioId !== null
+            ? `?incluir_usuario=${encodeURIComponent(String(state.editingVeterinarioUsuarioId))}`
+            : '';
+
+        const requests = [
             apiRequest('/api/tutores/'),
             apiRequest('/api/mascotas/'),
             apiRequest('/api/veterinarios/'),
             apiRequest('/api/citas/'),
             apiRequest('/api/fichas/'),
             apiRequest('/api/recordatorios/'),
-        ]);
+            apiRequest(`/api/veterinarios/usuarios-disponibles/${disponiblesQuery}`),
+        ];
+        if (isStaff) {
+            requests.push(apiRequest('/api/usuarios/'));
+        }
+
+        const [
+            tutoresRes,
+            mascotasRes,
+            vetsRes,
+            citasRes,
+            fichasRes,
+            recRes,
+            disponiblesRes,
+            usuariosRes,
+        ] = await Promise.all(requests);
 
         state.tutores = Array.isArray(tutoresRes.data) ? tutoresRes.data : [];
         state.mascotas = Array.isArray(mascotasRes.data) ? mascotasRes.data : [];
@@ -345,6 +434,10 @@ async function loadAllModules() {
         state.citas = Array.isArray(citasRes.data) ? citasRes.data : [];
         state.fichas = Array.isArray(fichasRes.data) ? fichasRes.data : [];
         state.recordatorios = Array.isArray(recRes.data) ? recRes.data : [];
+        state.usuariosDisponibles = Array.isArray(disponiblesRes.data) ? disponiblesRes.data : [];
+        state.usuarios = isStaff && usuariosRes && Array.isArray(usuariosRes.data)
+            ? usuariosRes.data
+            : [];
 
         refreshAllSelects();
         renderTutores();
@@ -353,6 +446,9 @@ async function loadAllModules() {
         renderCitas();
         renderFichas();
         renderRecordatorios();
+        if (isStaff) {
+            renderUsuarios();
+        }
     } catch (error) {
         if (error.status !== 401) {
             showGlobalAlert(`No fue posible sincronizar los datos clínicos: ${error.message}`, 'error');
@@ -538,6 +634,7 @@ async function handleMascotaSubmit(event) {
 
 /* ======================== MÓDULO 3: VETERINARIOS ======================== */
 function resetVeterinarioForm() {
+    state.editingVeterinarioUsuarioId = null;
     document.getElementById('form-veterinarios').reset();
     document.getElementById('veterinario-id').value = '';
     clearFormError('veterinarios');
@@ -564,12 +661,19 @@ function renderVeterinarios() {
         const actionsTd = document.createElement('td');
         const wrap = document.createElement('div');
         wrap.className = 'row-actions';
-        wrap.appendChild(createActionButton('Editar', 'secondary', () => {
+        wrap.appendChild(createActionButton('Editar', 'secondary', async () => {
+            clearFormError('veterinarios');
+            state.editingVeterinarioUsuarioId = item.usuario;
+            try {
+                await loadUsuariosDisponibles(item.usuario, item.usuario);
+            } catch (error) {
+                showFormError('veterinarios', formatApiError(error.data, error.message));
+                return;
+            }
             document.getElementById('veterinario-id').value = String(item.id);
             document.getElementById('veterinario-usuario').value = String(item.usuario);
             document.getElementById('veterinario-especialidad').value = item.especialidad || '';
             document.getElementById('veterinario-telefono').value = item.telefono || '';
-            clearFormError('veterinarios');
             setEditMode('veterinarios', true, 'Nuevo Veterinario', `Editar Veterinario #${item.id}`, 'Guardar Veterinario', 'Actualizar Veterinario');
         }));
         wrap.appendChild(createActionButton('Eliminar', 'danger', () => {
@@ -594,9 +698,15 @@ async function handleVeterinarioSubmit(event) {
     event.preventDefault();
     clearFormError('veterinarios');
 
+    const usuarioValue = document.getElementById('veterinario-usuario').value;
+    if (!usuarioValue) {
+        showFormError('veterinarios', 'Debe seleccionar un usuario disponible para el perfil veterinario.');
+        return;
+    }
+
     const id = document.getElementById('veterinario-id').value;
     const payload = {
-        usuario: Number(document.getElementById('veterinario-usuario').value),
+        usuario: Number(usuarioValue),
         especialidad: document.getElementById('veterinario-especialidad').value,
         telefono: document.getElementById('veterinario-telefono').value,
     };
@@ -932,6 +1042,122 @@ async function handleRecordatorioSubmit(event) {
     }
 }
 
+/* ======================== MÓDULO 7: USUARIOS (RBAC STAFF) ======================== */
+function resetUsuarioForm() {
+    document.getElementById('form-usuarios').reset();
+    clearFormError('usuarios');
+}
+
+function renderUsuarios() {
+    const tbody = document.getElementById('tbody-usuarios');
+    document.getElementById('count-usuarios').textContent = String(state.usuarios.length);
+    if (state.usuarios.length === 0) {
+        renderEmptyRow(tbody, 8, 'No hay usuarios registrados.');
+        return;
+    }
+
+    clearChildren(tbody);
+    state.usuarios.forEach((item) => {
+        const tr = document.createElement('tr');
+        const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim();
+
+        tr.appendChild(createTextCell(item.id));
+        tr.appendChild(createTextCell(item.username));
+        tr.appendChild(createTextCell(fullName));
+        tr.appendChild(createTextCell(item.email));
+
+        const roleTd = document.createElement('td');
+        roleTd.appendChild(
+            createBadge(
+                item.is_staff ? 'Staff Clínico' : 'Usuario Estándar',
+                item.is_staff ? 'info' : 'neutral'
+            )
+        );
+        tr.appendChild(roleTd);
+
+        const activeTd = document.createElement('td');
+        activeTd.appendChild(
+            createBadge(
+                item.is_active ? 'Activo' : 'Inactivo',
+                item.is_active ? 'success' : 'danger'
+            )
+        );
+        tr.appendChild(activeTd);
+
+        const vetTd = document.createElement('td');
+        vetTd.appendChild(
+            createBadge(
+                item.tiene_perfil_veterinario ? 'Vinculado' : 'Disponible',
+                item.tiene_perfil_veterinario ? 'info' : 'warn'
+            )
+        );
+        tr.appendChild(vetTd);
+
+        const actionsTd = document.createElement('td');
+        const wrap = document.createElement('div');
+        wrap.className = 'row-actions';
+
+        const isSelf = Boolean(state.user && state.user.id === item.id);
+        const toggleBtn = createActionButton(
+            item.is_active ? 'Desactivar' : 'Activar',
+            item.is_active ? 'danger' : 'primary',
+            async () => {
+                try {
+                    await apiRequest(`/api/usuarios/${item.id}/`, {
+                        method: 'PATCH',
+                        body: { is_active: !item.is_active },
+                    });
+                    showGlobalAlert(
+                        `Estado del usuario ${item.username} actualizado correctamente.`,
+                        'success'
+                    );
+                    await loadAllModules();
+                } catch (error) {
+                    showGlobalAlert(
+                        `No se pudo actualizar el usuario: ${formatApiError(error.data, error.message)}`,
+                        'error'
+                    );
+                }
+            }
+        );
+        if (isSelf) {
+            toggleBtn.disabled = true;
+            toggleBtn.title = 'No puede desactivar su propia cuenta';
+        }
+        wrap.appendChild(toggleBtn);
+        actionsTd.appendChild(wrap);
+        tr.appendChild(actionsTd);
+
+        tbody.appendChild(tr);
+    });
+}
+
+async function handleUsuarioSubmit(event) {
+    event.preventDefault();
+    clearFormError('usuarios');
+
+    const payload = {
+        username: document.getElementById('usuario-username').value,
+        first_name: document.getElementById('usuario-first-name').value,
+        last_name: document.getElementById('usuario-last-name').value,
+        email: document.getElementById('usuario-email').value,
+        password: document.getElementById('usuario-password').value,
+        is_staff: document.getElementById('usuario-rol').value === 'true',
+    };
+
+    try {
+        const result = await apiRequest('/api/usuarios/', { method: 'POST', body: payload });
+        showGlobalAlert(
+            `Usuario ${result.data.username} creado correctamente y disponible para asignación.`,
+            'success'
+        );
+        resetUsuarioForm();
+        await loadAllModules();
+    } catch (error) {
+        showFormError('usuarios', formatApiError(error.data, error.message));
+    }
+}
+
 /* ======================== EVENTOS GLOBALES E INICIALIZACIÓN ======================== */
 async function handleLoginSubmit(event) {
     event.preventDefault();
@@ -1001,7 +1227,12 @@ function bindEvents() {
     document.getElementById('btnCancel-mascotas').addEventListener('click', resetMascotaForm);
 
     document.getElementById('form-veterinarios').addEventListener('submit', handleVeterinarioSubmit);
-    document.getElementById('btnCancel-veterinarios').addEventListener('click', resetVeterinarioForm);
+    document.getElementById('btnCancel-veterinarios').addEventListener('click', () => {
+        resetVeterinarioForm();
+        loadUsuariosDisponibles().catch((error) => {
+            showGlobalAlert(`No se pudo refrescar el listado de usuarios disponibles: ${error.message}`, 'warn');
+        });
+    });
 
     document.getElementById('form-citas').addEventListener('submit', handleCitaSubmit);
     document.getElementById('btnCancel-citas').addEventListener('click', resetCitaForm);
@@ -1011,6 +1242,8 @@ function bindEvents() {
 
     document.getElementById('form-recordatorios').addEventListener('submit', handleRecordatorioSubmit);
     document.getElementById('btnCancel-recordatorios').addEventListener('click', resetRecordatorioForm);
+
+    document.getElementById('form-usuarios').addEventListener('submit', handleUsuarioSubmit);
 
     el.btnConfirmCancel.addEventListener('click', closeConfirmModal);
     el.confirmModal.addEventListener('click', (event) => {

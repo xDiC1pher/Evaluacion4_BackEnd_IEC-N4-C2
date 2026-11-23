@@ -1,12 +1,150 @@
 """
 Serializadores DRF con listas explícitas de campos y validaciones de integridad
-para las entidades clínicas de PetCare.
+para las entidades clínicas y gestión de usuarios de PetCare.
 """
 
+from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Cita, FichaClinica, Mascota, Recordatorio, Tutor, Veterinario
+
+
+class UsuarioDisponibleSerializer(serializers.ModelSerializer):
+    """Serializador de solo lectura con campos no sensibles para selector de veterinarios."""
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name', 'email']
+        read_only_fields = ['id', 'username', 'first_name', 'last_name', 'email']
+
+
+class UsuarioSerializer(serializers.ModelSerializer):
+    """
+    Serializador RBAC para listar y crear usuarios del sistema.
+    Valida contraseñas con validate_password, oculta password en respuestas
+    y bloquea la asignación de is_superuser.
+    """
+
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password'},
+    )
+    tiene_perfil_veterinario = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'email',
+            'password',
+            'is_staff',
+            'is_active',
+            'tiene_perfil_veterinario',
+        ]
+        read_only_fields = ['id', 'tiene_perfil_veterinario']
+
+    def get_tiene_perfil_veterinario(self, obj):
+        """Indica si el usuario ya está vinculado a un perfil Veterinario."""
+        return hasattr(obj, 'veterinario')
+
+    def validate_username(self, value):
+        """Valida que el nombre de usuario no contenga solo espacios."""
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError('El nombre de usuario no puede estar vacío.')
+        return cleaned
+
+    def validate_email(self, value):
+        """Normaliza y valida el correo electrónico del usuario."""
+        return value.strip()
+
+    def validate_password(self, value):
+        """Aplica los validadores oficiales de contraseña configurados en Django."""
+        candidate_user = User(
+            username=str(self.initial_data.get('username', '')).strip(),
+            first_name=str(self.initial_data.get('first_name', '')).strip(),
+            last_name=str(self.initial_data.get('last_name', '')).strip(),
+            email=str(self.initial_data.get('email', '')).strip(),
+        )
+        try:
+            validate_password(value, user=candidate_user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
+        return value
+
+    def create(self, validated_data):
+        """Crea el usuario con hashing seguro PBKDF2 y sin privilegios de superusuario."""
+        password = validated_data.pop('password')
+        username = validated_data.pop('username')
+        email = validated_data.pop('email', '')
+        first_name = validated_data.pop('first_name', '').strip()
+        last_name = validated_data.pop('last_name', '').strip()
+        is_staff = bool(validated_data.pop('is_staff', False))
+        is_active = bool(validated_data.pop('is_active', True))
+
+        return User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            is_staff=is_staff,
+            is_active=is_active,
+            is_superuser=False,
+        )
+
+
+class UsuarioEstadoSerializer(serializers.ModelSerializer):
+    """Serializador acotado para alternar is_active sin permitir auto-desactivación."""
+
+    tiene_perfil_veterinario = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'email',
+            'is_staff',
+            'is_active',
+            'tiene_perfil_veterinario',
+        ]
+        read_only_fields = [
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'email',
+            'is_staff',
+            'tiene_perfil_veterinario',
+        ]
+
+    def get_tiene_perfil_veterinario(self, obj):
+        """Indica si el usuario ya está vinculado a un perfil Veterinario."""
+        return hasattr(obj, 'veterinario')
+
+    def validate_is_active(self, value):
+        """Impide que el usuario staff autenticado desactive su propia cuenta."""
+        request = self.context.get('request')
+        if (
+            request is not None
+            and self.instance is not None
+            and request.user.pk == self.instance.pk
+            and value is False
+        ):
+            raise serializers.ValidationError(
+                'No puede desactivar su propia cuenta de usuario.'
+            )
+        return value
 
 
 class TutorSerializer(serializers.ModelSerializer):

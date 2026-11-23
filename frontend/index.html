@@ -119,6 +119,9 @@
                     <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="recordatorios">
                         Recordatorios
                     </button>
+                    <button type="button" id="tabBtn-usuarios" class="tab-btn is-hidden" role="tab" aria-selected="false" data-tab="usuarios" hidden>
+                        Usuarios
+                    </button>
                 </nav>
                 <button type="button" id="btnRefreshAll" class="btn btn-secondary">
                     Sincronizar Datos
@@ -261,8 +264,8 @@
                         <form id="form-veterinarios" class="form-stack">
                             <input type="hidden" id="veterinario-id">
                             <div class="field">
-                                <label for="veterinario-usuario">ID de Usuario Django</label>
-                                <input id="veterinario-usuario" type="number" min="1" required>
+                                <label for="veterinario-usuario">Usuario Asociado</label>
+                                <select id="veterinario-usuario" required></select>
                             </div>
                             <div class="field">
                                 <label for="veterinario-especialidad">Especialidad</label>
@@ -494,6 +497,75 @@
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-recordatorios"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 7: Usuarios (RBAC exclusivo para Staff Clínico) -->
+            <section id="panel-usuarios" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-usuarios">Nuevo Usuario</h2>
+                        </div>
+                        <form id="form-usuarios" class="form-stack">
+                            <div class="field">
+                                <label for="usuario-username">Usuario</label>
+                                <input id="usuario-username" type="text" maxlength="150" autocomplete="off" required>
+                            </div>
+                            <div class="field">
+                                <label for="usuario-first-name">Nombre</label>
+                                <input id="usuario-first-name" type="text" maxlength="150">
+                            </div>
+                            <div class="field">
+                                <label for="usuario-last-name">Apellido</label>
+                                <input id="usuario-last-name" type="text" maxlength="150">
+                            </div>
+                            <div class="field">
+                                <label for="usuario-email">Correo Electrónico</label>
+                                <input id="usuario-email" type="email" required>
+                            </div>
+                            <div class="field">
+                                <label for="usuario-password">Contraseña</label>
+                                <input id="usuario-password" type="password" minlength="8" autocomplete="new-password" required>
+                                <small class="field-hint">Mínimo 8 caracteres; evite claves comunes, solo numéricas o similares al usuario.</small>
+                            </div>
+                            <div class="field">
+                                <label for="usuario-rol">Rol del Sistema</label>
+                                <select id="usuario-rol" required>
+                                    <option value="false">Usuario Estándar</option>
+                                    <option value="true">Staff Clínico</option>
+                                </select>
+                            </div>
+                            <div id="error-usuarios" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-usuarios" class="btn btn-primary">Crear Usuario</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Usuarios Registrados</h2>
+                            <span id="count-usuarios" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Usuario</th>
+                                        <th>Nombre Completo</th>
+                                        <th>Correo</th>
+                                        <th>Rol</th>
+                                        <th>Estado</th>
+                                        <th>Perfil Veterinario</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-usuarios"></tbody>
                             </table>
                         </div>
                     </article>

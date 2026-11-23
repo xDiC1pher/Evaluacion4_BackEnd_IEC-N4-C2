@@ -2,9 +2,12 @@
 Vistas y ViewSets de la API REST pura para el módulo clinic de PetCare.
 """
 
-from rest_framework import viewsets
+from django.contrib.auth.models import User
+from django.db.models import Q
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,6 +18,9 @@ from .serializers import (
     MascotaSerializer,
     RecordatorioSerializer,
     TutorSerializer,
+    UsuarioDisponibleSerializer,
+    UsuarioEstadoSerializer,
+    UsuarioSerializer,
     VeterinarioSerializer,
 )
 
@@ -48,6 +54,28 @@ class CurrentUserView(APIView):
         })
 
 
+class UsuarioViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    ViewSet RBAC para gestión de usuarios exclusivamente por Staff Clínico.
+    Permite listar (GET), crear (POST) y alternar is_active (PATCH).
+    """
+
+    queryset = User.objects.select_related('veterinario').all().order_by('id')
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_serializer_class(self):
+        """Restringe PATCH únicamente al cambio controlado de estado is_active."""
+        if self.action == 'partial_update':
+            return UsuarioEstadoSerializer
+        return UsuarioSerializer
+
+
 class TutorViewSet(viewsets.ModelViewSet):
     """ViewSet CRUD autenticado para la entidad Tutor."""
 
@@ -70,6 +98,31 @@ class VeterinarioViewSet(viewsets.ModelViewSet):
     queryset = Veterinario.objects.select_related('usuario').all().order_by('id')
     serializer_class = VeterinarioSerializer
     permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='usuarios-disponibles')
+    def usuarios_disponibles(self, request):
+        """
+        Retorna usuarios activos no vinculados a un Veterinario, ordenados por ID.
+        Admite ?incluir_usuario=<id> para conservar el usuario actual en modo edición.
+        """
+        incluir_raw = request.query_params.get('incluir_usuario')
+        incluir_id = None
+        if incluir_raw is not None and incluir_raw != '':
+            try:
+                incluir_id = int(incluir_raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'incluir_usuario': 'El parámetro incluir_usuario debe ser un entero válido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        filtro = Q(is_active=True, veterinario__isnull=True)
+        if incluir_id is not None:
+            filtro = filtro | Q(pk=incluir_id)
+
+        usuarios = User.objects.filter(filtro).distinct().order_by('id')
+        serializer = UsuarioDisponibleSerializer(usuarios, many=True)
+        return Response(serializer.data)
 
 
 class CitaViewSet(viewsets.ModelViewSet):
