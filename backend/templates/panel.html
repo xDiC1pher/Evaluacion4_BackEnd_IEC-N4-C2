@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<!--
+=============================================================================
+Contenedor principal del Panel Médico
+Visualiza citas agendadas y permite la creación asíncrona mediante consumo de API REST
+=============================================================================
+-->
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Calendario de Citas</h4>
+                <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#modalCrearCita">
+                    + Agendar Cita (Vía API)
+                </button>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Mascota</th>
+                            <th>Veterinario</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaCitas">
+                        {% for cita in citas %}
+                        <tr>
+                            <td>{{ cita.fecha_hora|date:"Y-m-d H:i" }}</td>
+                            <td>{{ cita.mascota.nombre }}</td>
+                            <td>{{ cita.veterinario.usuario.last_name }}</td>
+                            <td>
+                                <span class="badge {% if cita.estado == 'Pendiente' %}bg-warning{% elif cita.estado == 'Realizada' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ cita.estado }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if cita.ficha %}
+                                    <a href="/admin/clinic/fichaclinica/{{ cita.ficha.id }}/change/" class="btn btn-sm btn-primary">Ver Ficha</a>
+                                {% else %}
+                                    <a href="/admin/clinic/fichaclinica/add/" class="btn btn-sm btn-outline-secondary">Crear Ficha</a>
+                                {% endif %}
+                                {% if cita.estado == 'Pendiente' %}
+                                    {% if user == cita.veterinario.usuario or user.is_superuser %}
+                                        <button class="btn btn-sm btn-success ms-1" onclick="marcarComoRealizada({{ cita.id }})">
+                                            ✔ Marcar Realizada
+                                        </button>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">No hay citas registradas en el sistema.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">Alertas y Recordatorios</h5>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for recordatorio in recordatorios %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ recordatorio.mascota.nombre }}</strong><br>
+                        <small class="text-muted">{{ recordatorio.tipo }} - {{ recordatorio.fecha_programada|date:"d M Y" }}</small>
+                    </div>
+                    <span class="badge bg-danger rounded-pill">!</span>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-center text-muted">Todos los esquemas están al día.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!--
+=============================================================================
+Modal HTML de Bootstrap para capturar los datos de la nueva cita.
+Se implementan selectores dinámicos poblados asíncronamente.
+=============================================================================
+-->
+<div class="modal fade" id="modalCrearCita" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Agendar Nueva Cita</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formCita">
+                    <div class="mb-3">
+                        <label>Mascota</label>
+                        <select id="apiMascota" class="form-control" required>
+                            <option value="" disabled selected>Cargando mascotas...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Veterinario</label>
+                        <select id="apiVeterinario" class="form-control" required>
+                            <option value="" disabled selected>Cargando veterinarios...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Fecha y Hora</label>
+                        <input type="datetime-local" id="apiFecha" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Motivo</label>
+                        <textarea id="apiMotivo" class="form-control" rows="2" required></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="consumirAPICita()">Guardar Cita</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /*
+    =============================================================================
+    CONTROLADOR ASÍNCRONO REST: Rutina de extracción de datos mediante API Fetch
+    para poblar los selectores del modal al inicializar el DOM.
+    =============================================================================
+    */
+    document.addEventListener('DOMContentLoaded', function() {
+        const mascotaSelect = document.getElementById('apiMascota');
+        const veterinarioSelect = document.getElementById('apiVeterinario');
+
+        async function poblarDropdown(url, selectElement, defaultText) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                selectElement.innerHTML = `<option value="" disabled selected>${defaultText}</option>`;
+                
+                data.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.id;
+                    option.textContent = item.nombre || item.usuario__username || `ID: ${item.id}`; 
+                    selectElement.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Anomalía detectada en la sincronización de la API:', error);
+                selectElement.innerHTML = `<option value="" disabled>Error de conexión</option>`;
+            }
+        }
+
+        poblarDropdown('/api/mascotas/', mascotaSelect, 'Seleccione una mascota');
+        poblarDropdown('/api/veterinarios/', veterinarioSelect, 'Seleccione un veterinario');
+    });
+
+    /*
+    =============================================================================
+    MÉTODOS DE AUTORIZACIÓN Y ENVÍO POST
+    =============================================================================
+    */
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    async function consumirAPICita() {
+        const payload = {
+            mascota: document.getElementById('apiMascota').value,
+            veterinario: document.getElementById('apiVeterinario').value,
+            fecha_hora: document.getElementById('apiFecha').value,
+            motivo: document.getElementById('apiMotivo').value,
+            estado: 'Pendiente'
+        };
+
+        try {
+            const response = await fetch('/api/citas/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                alert("Cita agendada exitosamente vía API.");
+                location.reload();
+            } else {
+                alert("Error al agendar la cita. Verifique la selección en los desplegables.");
+            }
+        } catch (error) {
+            console.error("Falla en la comunicación con la API:", error);
+        }
+    }
+    async function marcarComoRealizada(citaId) {
+        if (!confirm("¿Está seguro de que desea marcar esta cita como realizada?")) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/citas/${citaId}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ estado: 'Realizada' })
+            });
+
+            if (response.ok) {
+                location.reload(); 
+            } else {
+                alert("Error al actualizar la cita. Verifique el endpoint de la API.");
+            }
+        } catch (error) {
+            console.error("Falla en la comunicación con la API:", error);
+        }
+    }
+</script>
+{% endblock %}
