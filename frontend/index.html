@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PetCare — Sistema de Gestión Clínica Veterinaria</title>
+    <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+    <!-- Barra superior de navegación, estado de salud API y sesión JWT -->
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <div class="brand-group">
+                <img id="brandLogo" class="brand-logo is-hidden" alt="Logo PetCare" hidden>
+                <div>
+                    <h1 class="brand-title">PetCare Hub</h1>
+                    <p class="brand-subtitle">
+                        Gestión Clínica Veterinaria
+                        <span class="api-pill" id="apiBaseBadge">API</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="topbar-actions">
+                <button type="button" id="btnHealthCheck" class="btn btn-outline-light">
+                    Verificar Salud API (/api/health/)
+                </button>
+                <div id="userStatusBox" class="user-box is-hidden" hidden>
+                    <div class="user-meta">
+                        <span id="userNameDisplay" class="user-name"></span>
+                        <span id="userRoleBadge" class="badge badge-neutral"></span>
+                    </div>
+                    <button type="button" id="btnLogout" class="btn btn-danger-soft">
+                        Cerrar Sesión
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Barra de telemetría HTTP para auditoría y demostración en vivo -->
+    <section class="telemetry-bar" aria-label="Telemetría HTTP de la API">
+        <div class="container telemetry-inner">
+            <span class="telemetry-label">Última respuesta API:</span>
+            <code id="telemetryMethod" class="telemetry-code">---</code>
+            <code id="telemetryEndpoint" class="telemetry-code">/api/...</code>
+            <span id="telemetryStatus" class="badge badge-neutral">Sin peticiones</span>
+            <span id="telemetryTime" class="telemetry-time">--:--:--</span>
+            <span id="telemetryMessage" class="telemetry-msg">Esperando interacción del cliente.</span>
+        </div>
+    </section>
+
+    <main class="container main-content">
+        <!-- Banner global de notificaciones y errores -->
+        <div id="globalAlert" class="alert-banner is-hidden" role="status" aria-live="polite" hidden>
+            <span id="globalAlertText"></span>
+            <button type="button" id="btnCloseAlert" class="btn-icon" aria-label="Cerrar mensaje">
+                ×
+            </button>
+        </div>
+
+        <!-- Vista de inicio de sesión JWT -->
+        <section id="loginSection" class="auth-wrapper" aria-labelledby="loginHeading">
+            <div class="card auth-card">
+                <div class="card-header">
+                    <h2 id="loginHeading">Acceso Profesional JWT</h2>
+                    <p class="muted">Ingrese sus credenciales registradas en el backend PetCare.</p>
+                </div>
+                <form id="loginForm" class="form-stack" novalidate>
+                    <div class="field">
+                        <label for="loginUsername">Usuario</label>
+                        <input
+                            id="loginUsername"
+                            name="username"
+                            type="text"
+                            autocomplete="username"
+                            placeholder="Ej. dr_rojas"
+                            required
+                        >
+                    </div>
+                    <div class="field">
+                        <label for="loginPassword">Contraseña</label>
+                        <input
+                            id="loginPassword"
+                            name="password"
+                            type="password"
+                            autocomplete="current-password"
+                            placeholder="••••••••"
+                            required
+                        >
+                    </div>
+                    <div id="loginError" class="form-error is-hidden" role="alert" hidden></div>
+                    <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-full">
+                        Iniciar Sesión
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Aplicación principal autenticada con CRUD de 6 entidades -->
+        <section id="appSection" class="app-wrapper is-hidden" aria-label="Panel Clínico PetCare" hidden>
+            <div class="tabs-bar">
+                <nav class="tabs-list" role="tablist" aria-label="Módulos clínicos">
+                    <button type="button" class="tab-btn is-active" role="tab" aria-selected="true" data-tab="tutores">
+                        Tutores
+                    </button>
+                    <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="mascotas">
+                        Mascotas
+                    </button>
+                    <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="veterinarios">
+                        Veterinarios
+                    </button>
+                    <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="citas">
+                        Citas
+                    </button>
+                    <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="fichas">
+                        Fichas Clínicas
+                    </button>
+                    <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="recordatorios">
+                        Recordatorios
+                    </button>
+                </nav>
+                <button type="button" id="btnRefreshAll" class="btn btn-secondary">
+                    Sincronizar Datos
+                </button>
+            </div>
+
+            <!-- Módulo 1: Tutores -->
+            <section id="panel-tutores" class="tab-panel" role="tabpanel">
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-tutores">Nuevo Tutor</h2>
+                        </div>
+                        <form id="form-tutores" class="form-stack">
+                            <input type="hidden" id="tutor-id">
+                            <div class="field">
+                                <label for="tutor-nombre">Nombre</label>
+                                <input id="tutor-nombre" type="text" maxlength="100" required>
+                            </div>
+                            <div class="field">
+                                <label for="tutor-apellido">Apellido</label>
+                                <input id="tutor-apellido" type="text" maxlength="100" required>
+                            </div>
+                            <div class="field">
+                                <label for="tutor-telefono">Teléfono</label>
+                                <input id="tutor-telefono" type="text" maxlength="20" placeholder="+56912345678" required>
+                            </div>
+                            <div class="field">
+                                <label for="tutor-email">Correo Electrónico</label>
+                                <input id="tutor-email" type="email" required>
+                            </div>
+                            <div class="field">
+                                <label for="tutor-direccion">Dirección</label>
+                                <textarea id="tutor-direccion" rows="2"></textarea>
+                            </div>
+                            <div id="error-tutores" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-tutores" class="btn btn-primary">Guardar Tutor</button>
+                                <button type="button" id="btnCancel-tutores" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Tutores Registrados</h2>
+                            <span id="count-tutores" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nombre Completo</th>
+                                        <th>Teléfono</th>
+                                        <th>Email</th>
+                                        <th>Dirección</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-tutores"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 2: Mascotas -->
+            <section id="panel-mascotas" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-mascotas">Nueva Mascota</h2>
+                        </div>
+                        <form id="form-mascotas" class="form-stack">
+                            <input type="hidden" id="mascota-id">
+                            <div class="field">
+                                <label for="mascota-tutor">Tutor</label>
+                                <select id="mascota-tutor" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="mascota-nombre">Nombre</label>
+                                <input id="mascota-nombre" type="text" maxlength="100" required>
+                            </div>
+                            <div class="field">
+                                <label for="mascota-especie">Especie</label>
+                                <select id="mascota-especie" required>
+                                    <option value="Canino">Canino</option>
+                                    <option value="Felino">Felino</option>
+                                    <option value="Exotico">Exótico</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="mascota-raza">Raza</label>
+                                <input id="mascota-raza" type="text" maxlength="100">
+                            </div>
+                            <div class="field">
+                                <label for="mascota-fecha-nacimiento">Fecha de Nacimiento</label>
+                                <input id="mascota-fecha-nacimiento" type="date">
+                            </div>
+                            <div id="error-mascotas" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-mascotas" class="btn btn-primary">Guardar Mascota</button>
+                                <button type="button" id="btnCancel-mascotas" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Mascotas Pacientes</h2>
+                            <span id="count-mascotas" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Mascota</th>
+                                        <th>Especie / Raza</th>
+                                        <th>Tutor</th>
+                                        <th>Nacimiento</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-mascotas"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 3: Veterinarios -->
+            <section id="panel-veterinarios" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-veterinarios">Nuevo Veterinario</h2>
+                        </div>
+                        <form id="form-veterinarios" class="form-stack">
+                            <input type="hidden" id="veterinario-id">
+                            <div class="field">
+                                <label for="veterinario-usuario">ID de Usuario Django</label>
+                                <input id="veterinario-usuario" type="number" min="1" required>
+                            </div>
+                            <div class="field">
+                                <label for="veterinario-especialidad">Especialidad</label>
+                                <input id="veterinario-especialidad" type="text" maxlength="100" required>
+                            </div>
+                            <div class="field">
+                                <label for="veterinario-telefono">Teléfono</label>
+                                <input id="veterinario-telefono" type="text" maxlength="20" required>
+                            </div>
+                            <div id="error-veterinarios" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-veterinarios" class="btn btn-primary">Guardar Veterinario</button>
+                                <button type="button" id="btnCancel-veterinarios" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Equipo Veterinario</h2>
+                            <span id="count-veterinarios" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Profesional</th>
+                                        <th>ID Usuario</th>
+                                        <th>Especialidad</th>
+                                        <th>Teléfono</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-veterinarios"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 4: Citas -->
+            <section id="panel-citas" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-citas">Agendar Cita</h2>
+                        </div>
+                        <form id="form-citas" class="form-stack">
+                            <input type="hidden" id="cita-id">
+                            <div class="field">
+                                <label for="cita-mascota">Mascota</label>
+                                <select id="cita-mascota" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="cita-veterinario">Veterinario</label>
+                                <select id="cita-veterinario" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="cita-fecha-hora">Fecha y Hora</label>
+                                <input id="cita-fecha-hora" type="datetime-local" required>
+                            </div>
+                            <div class="field">
+                                <label for="cita-estado">Estado</label>
+                                <select id="cita-estado" required>
+                                    <option value="Pendiente">Pendiente</option>
+                                    <option value="Realizada">Realizada</option>
+                                    <option value="Cancelada">Cancelada</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="cita-motivo">Motivo de Atención</label>
+                                <textarea id="cita-motivo" rows="3" required></textarea>
+                            </div>
+                            <div id="error-citas" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-citas" class="btn btn-primary">Guardar Cita</button>
+                                <button type="button" id="btnCancel-citas" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Calendario de Citas</h2>
+                            <span id="count-citas" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Fecha y Hora</th>
+                                        <th>Mascota</th>
+                                        <th>Veterinario</th>
+                                        <th>Motivo</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-citas"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 5: Fichas Clínicas -->
+            <section id="panel-fichas" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-fichas">Nueva Ficha Clínica</h2>
+                        </div>
+                        <form id="form-fichas" class="form-stack">
+                            <input type="hidden" id="ficha-id">
+                            <div class="field">
+                                <label for="ficha-cita">Cita Asociada</label>
+                                <select id="ficha-cita" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="ficha-diagnostico">Diagnóstico</label>
+                                <textarea id="ficha-diagnostico" rows="2" required></textarea>
+                            </div>
+                            <div class="field">
+                                <label for="ficha-tratamiento">Tratamiento</label>
+                                <textarea id="ficha-tratamiento" rows="2" required></textarea>
+                            </div>
+                            <div class="field">
+                                <label for="ficha-receta">Receta</label>
+                                <textarea id="ficha-receta" rows="2"></textarea>
+                            </div>
+                            <div class="field">
+                                <label for="ficha-examenes">Exámenes Solicitados</label>
+                                <textarea id="ficha-examenes" rows="2"></textarea>
+                            </div>
+                            <div class="field">
+                                <label for="ficha-documento">Documento Adjunto (S3 / Media)</label>
+                                <input id="ficha-documento" type="file">
+                            </div>
+                            <div id="error-fichas" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-fichas" class="btn btn-primary">Guardar Ficha</button>
+                                <button type="button" id="btnCancel-fichas" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Fichas Clínicas Digitales</h2>
+                            <span id="count-fichas" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Cita</th>
+                                        <th>Diagnóstico</th>
+                                        <th>Tratamiento</th>
+                                        <th>Adjunto</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-fichas"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <!-- Módulo 6: Recordatorios -->
+            <section id="panel-recordatorios" class="tab-panel is-hidden" role="tabpanel" hidden>
+                <div class="module-grid">
+                    <article class="card">
+                        <div class="card-header">
+                            <h2 id="formTitle-recordatorios">Nuevo Recordatorio</h2>
+                        </div>
+                        <form id="form-recordatorios" class="form-stack">
+                            <input type="hidden" id="recordatorio-id">
+                            <div class="field">
+                                <label for="recordatorio-mascota">Mascota</label>
+                                <select id="recordatorio-mascota" required></select>
+                            </div>
+                            <div class="field">
+                                <label for="recordatorio-tipo">Tipo</label>
+                                <select id="recordatorio-tipo" required>
+                                    <option value="Vacuna">Vacunación</option>
+                                    <option value="Control">Control Periódico</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="recordatorio-descripcion">Descripción</label>
+                                <input id="recordatorio-descripcion" type="text" maxlength="200" required>
+                            </div>
+                            <div class="field">
+                                <label for="recordatorio-fecha">Fecha Programada</label>
+                                <input id="recordatorio-fecha" type="date" required>
+                            </div>
+                            <div class="field-checkbox">
+                                <input id="recordatorio-completado" type="checkbox">
+                                <label for="recordatorio-completado">Marcar como completado</label>
+                            </div>
+                            <div id="error-recordatorios" class="form-error is-hidden" role="alert" hidden></div>
+                            <div class="form-actions">
+                                <button type="submit" id="btnSubmit-recordatorios" class="btn btn-primary">Guardar Recordatorio</button>
+                                <button type="button" id="btnCancel-recordatorios" class="btn btn-secondary is-hidden" hidden>Cancelar</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card">
+                        <div class="card-header card-header-row">
+                            <h2>Alertas y Recordatorios</h2>
+                            <span id="count-recordatorios" class="badge badge-info">0</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Mascota</th>
+                                        <th>Tipo</th>
+                                        <th>Descripción</th>
+                                        <th>Fecha</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-recordatorios"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <!-- Modal accesible de confirmación para operaciones destructivas -->
+    <div id="confirmModal" class="modal-backdrop is-hidden" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle" hidden>
+        <div class="modal-card">
+            <h3 id="confirmModalTitle">Confirmar eliminación</h3>
+            <p id="confirmModalMessage" class="muted"></p>
+            <div class="modal-actions">
+                <button type="button" id="btnConfirmCancel" class="btn btn-secondary">Cancelar</button>
+                <button type="button" id="btnConfirmAccept" class="btn btn-danger">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
